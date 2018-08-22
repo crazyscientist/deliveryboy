@@ -6,7 +6,7 @@ from deliveryboy.core import DeliveryBoyDecorator
 def sudo_test(value):
     print("=== HELLO WORLD ===")
     return "This is PID {} with value: {}".format(
-        0, value
+        os.getpid(), value
     )
 
 
