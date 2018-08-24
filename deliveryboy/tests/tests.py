@@ -1,7 +1,8 @@
-import unittest
-import pickle
 import base64
+import unittest
 import tempfile
+
+import dill
 
 
 def test_func(value):
@@ -11,7 +12,7 @@ def test_func(value):
 class DeliveryTest(unittest.TestCase):
 
     def test_pickle(self):
-        pickled = pickle.dumps(test_func)
+        pickled = dill.dumps(test_func)
         encoded = base64.b64encode(pickled)
         tmp = tempfile.mkstemp()
 
@@ -24,5 +25,14 @@ class DeliveryTest(unittest.TestCase):
         self.assertEqual(encoded, read)
         decoded = base64.b64decode(read)
         self.assertEqual(decoded, pickled)
-        fun = pickle.loads(decoded)
+        fun = dill.loads(decoded)
         self.assertEqual(test_func, fun)
+
+    def test_pickle_exception(self):
+        try:
+            1/0
+        except Exception as error:
+            pickled = dill.dumps(error)
+
+        unpickled = dill.loads(pickled)
+        self.assertTrue(isinstance(unpickled, ZeroDivisionError))

@@ -1,28 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf8 -*-
 
-from dill import dumps, loads
 import base64
-import os
+from io import StringIO
 import subprocess
 import sys
 import types
 
-
-class ExceptionWrapper(object):
-    """
-    Wrapper to allow pickling of exceptions
-
-    :param exc: exception
-    """
-    def __init__(self, exc):
-        self.exc = exc
+from dill import dumps, loads
 
 
 class DeliveryBox(object):
-    """
-    Container for data exchange
-    """
+    """Container for data exchange"""
     # OUTPUT VALUES
     stdout = None
     stderr = None
@@ -37,6 +26,35 @@ class DeliveryBox(object):
 
 
 class DeliveryBoy(object):
+    """Operator for call the new process and handle input/output
+
+    When called the decorated function and almost all modules stored in its
+    `__globals__` attribute are pickled and passed via the transport command
+    to the newly started python process.
+
+    If an exception is raised during execution of the decorated function, this
+    exception is pickled and reraised.
+
+    If `async` is `False`, STDOUT, STDERR and the return value of the decorated
+    function are returned upon calling the decorated function. Otherwise only
+    the STDOUT and STDERR of the transport command are returned.
+
+    :param func: Callable objecte that is called in the new process
+    :type func: callable
+    :param transport: Transport command
+    :type transport: str
+    :param executable: The python executable to be called.
+                       Default: `sys.executable`.
+    :type executable: Absolute path of python interpreter
+    :param async: If set to `True`, this process will not wait for the process
+                  called via the transport command to finish. Default: `False`
+    :type async: bool
+
+    TODO: Think about more parameters
+    TODO: Define arguments
+    TODO: Raise exception, if one is returned
+    TODO: Implement async feature
+    """
     def __init__(self, func, **params):
         self.func = func
         self.params = params
@@ -76,8 +94,56 @@ class DeliveryBoy(object):
 
 
 class DeliveryBoyDecorator(object):
+    """Decorator for functions
+
+    Decorated functions are pickled and passed to a newly started python process
+    that is called via a transport command (e.g. sudo)
+
+    :param transport: Transport command
+    :type transport: str
+    :param executable: The python executable to be called.
+                       Default: `sys.executable`.
+    :type executable: Absolute path of python interpreter
+    :param async: If set to `True`, this process will not wait for the process
+                  called via the transport command to finish. Default: `False`
+    :type async: bool
+    """
     def __init__(self, **params):
         self.params = params
 
     def __call__(self, func):
         return DeliveryBoy(func, **self.params)
+
+
+def main():
+    """Entry function for new process
+
+    This method unpickles data from the command line, redirects STDOUT + STDERR
+    and pickles the return value and exception
+
+    Input and output of this function are base64 encoded strings representing
+    pickled :py:obj:`deliveryboy.core.DeliveryBox` objects.
+    """
+    orig_stdout = sys.stdout
+    orig_stderr = sys.stderr
+    sys.stdout = StringIO()
+    sys.stderr = StringIO()
+    decoded = base64.b64decode(bytes(sys.argv[1], "utf8"))
+    box = DeliveryBox()
+
+    try:
+        inbox = loads(decoded)
+
+        globals().update({x: __import__(x) for x in inbox.modules})
+
+        func = types.FunctionType(inbox.func, globals())
+        box.return_value = func(*inbox.args, **inbox.kwargs)
+    except Exception as error:
+        box.exception = error
+
+    box.stdout = sys.stdout.getvalue()
+    box.stderr = sys.stderr.getvalue()
+
+    sys.stdout = orig_stdout
+    sys.stderr = orig_stderr
+    print(base64.b64encode(dumps(box)).decode("utf8"))
