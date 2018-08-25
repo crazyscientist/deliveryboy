@@ -1,13 +1,6 @@
 deliveryboy package
 ===================
 
-Subpackages
------------
-
-.. toctree::
-
-    deliveryboy.tests
-
 Submodules
 ----------
 
