@@ -9,6 +9,14 @@ def test_func(value):
     return value * 4
 
 
+class Foo(object):
+    def __init__(self, multiply):
+        self.multiply = multiply
+
+    def __call__(self, value):
+        return self.multiply * value
+
+
 class DeliveryTest(unittest.TestCase):
 
     def test_pickle(self):
@@ -36,3 +44,9 @@ class DeliveryTest(unittest.TestCase):
 
         unpickled = dill.loads(pickled)
         self.assertTrue(isinstance(unpickled, ZeroDivisionError))
+
+    def test_pickle_instance(self):
+        pickled = dill.dumps(Foo(3))
+        instance = dill.loads(pickled)
+
+        self.assertEqual(instance(2), 6)

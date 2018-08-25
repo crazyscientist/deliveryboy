@@ -9,7 +9,8 @@ import types
 
 from dill import dumps, loads
 
-from .exceptions import DeliveryTransportError, DeliveryPickleError
+from .exceptions import (DeliveryTransportError, DeliveryPickleError,
+                         DeliveryPackingError)
 
 
 class DeliveryBox(object):
@@ -25,6 +26,10 @@ class DeliveryBox(object):
     args = None
     kwargs = None
     modules = []
+
+    def __str__(self):
+        return "\n".join(["{:15s}: {}".format(key, value)
+                          for (key, value) in self.__dict__.items()])
 
 
 class DeliveryBoy(object):
@@ -73,12 +78,7 @@ class DeliveryBoy(object):
         self.outbox = None
 
     def __call__(self, *args, **kwargs):
-        self.inbox.args = args
-        self.inbox.kwargs = kwargs
-        self.inbox.func = self.func.__code__
-        self.inbox.modules = [k for (k, v) in self.func.__globals__.items()
-                              if isinstance(v, types.ModuleType)
-                              and not k.startswith("__")]
+        self._pack_box(args, kwargs)
 
         response = self._run_delivery()
 
@@ -88,6 +88,27 @@ class DeliveryBoy(object):
             self._reraise()
 
         return self.outbox.return_value
+
+    def _pack_box(self, args, kwargs):
+        """Pack callable, arguments and modules
+
+        :param args: Arguments to be passed to the callable
+        :type args: list
+        :param kwargs: Arguments to be passed to the callable
+        :type kwargs: dict
+        """
+        self.inbox.args = args
+        self.inbox.kwargs = kwargs
+        if isinstance(self.func, types.FunctionType):
+            self.inbox.func = self.func.__code__
+            myglobals = self.func.__globals__
+        else:
+            raise DeliveryPackingError(
+                "This type of callable is not supported"
+            )
+        self.inbox.modules = [k for (k, v) in myglobals.items()
+                              if isinstance(v, types.ModuleType)
+                              and not k.startswith("__")]
 
     def _run_delivery(self):
         """Executes the actual transport/executable
@@ -185,8 +206,29 @@ class DeliveryBoyDecorator(object):
 
 def execute(inbox):
     globals().update({x: __import__(x) for x in inbox.modules})
-    func = types.FunctionType(inbox.func, globals())
-    return func(*inbox.args, **inbox.kwargs)
+
+    orig_stdout = sys.stdout
+    orig_stderr = sys.stderr
+    sys.stdout = StringIO()
+    sys.stderr = StringIO()
+
+    if inbox.func is not None and isinstance(inbox.func, types.CodeType):
+        func = types.FunctionType(inbox.func, globals())
+    else:
+        raise DeliveryPackingError("No callable to run in delivery box")
+
+    box = DeliveryBox()
+    try:
+        box.return_value = func(*inbox.args, **inbox.kwargs)
+    except Exception as error:
+        box.exception = error
+    box.stdout = sys.stdout.getvalue()
+    box.stderr = sys.stderr.getvalue()
+
+    sys.stdout = orig_stdout
+    sys.stderr = orig_stderr
+    return box
+
 
 def main():
     """Entry function for new process
@@ -197,22 +239,13 @@ def main():
     Input and output of this function are base64 encoded strings representing
     pickled :py:obj:`deliveryboy.core.DeliveryBox` objects.
     """
-    orig_stdout = sys.stdout
-    orig_stderr = sys.stderr
-    sys.stdout = StringIO()
-    sys.stderr = StringIO()
-    decoded = base64.b64decode(bytes(sys.argv[1], "utf8"))
-    box = DeliveryBox()
-
     try:
+        decoded = base64.b64decode(bytes(sys.argv[1], "utf8"))
         inbox = loads(decoded)
-        box.return_value = execute(inbox)
     except Exception as error:
+        box = DeliveryBox()
         box.exception = error
+    else:
+        box = execute(inbox)
 
-    box.stdout = sys.stdout.getvalue()
-    box.stderr = sys.stderr.getvalue()
-
-    sys.stdout = orig_stdout
-    sys.stderr = orig_stderr
     print(base64.b64encode(dumps(box)).decode("utf8"))

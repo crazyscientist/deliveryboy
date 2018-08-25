@@ -23,7 +23,14 @@ class DeliveryTransportError(DeliveryError):
 
 
 class DeliveryPickleError(DeliveryError):
-    """ Failure during (un-) pickling
+    """Failure during (un-) pickling
 
     This exception is raised, if picklung or unpickling fails.
+    """
+
+
+class DeliveryPackingError(DeliveryError):
+    """Failure during packing of the callable
+
+    This exception is raised, if the decorated callable is not supported.
     """
