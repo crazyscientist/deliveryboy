@@ -13,6 +13,35 @@ from .exceptions import (DeliveryTransportError, DeliveryPickleError,
                          DeliveryPackingError)
 
 
+def pickle(data):
+    """Return pickled and encoded :py:obj:`deliveryboy.core.DeliveryBox`
+
+    :param data: delivery box to be pickled
+    :type data: :py:obj:`deliveryboy.core.DeliveryBox`
+    :returns: pickled/encoded delivery box
+    :type: bytes
+    """
+    try:
+        return base64.b64encode(dumps(data)).decode("utf8")
+    except Exception as error:
+        raise DeliveryPickleError(real_exception = error)
+
+
+def unpickle(data):
+    """Return unpickled :py:obj:`deliveryboy.core.DeliveryBox`
+
+    :param data: pickled/encoded delivery box
+    :type data: bytes
+    :return: :py:obj:`deliveryboy.core.DeliveryBox`
+    """
+    if data.endswith(b"\n"):
+        data = data[:-1]
+    try:
+        return loads(base64.b64decode(data))
+    except Exception as error:
+        raise DeliveryPickleError(real_exception = error)
+
+
 class DeliveryBox(object):
     """Container for data exchange"""
     # OUTPUT VALUES
@@ -35,15 +64,15 @@ class DeliveryBox(object):
 class DeliveryBoy(object):
     """Operator for call the new process and handle input/output
 
-    When called the decorated callable and non-standard modules stored in its
+    When called the decorated function and non-standard modules stored in its
     `__globals__` attribute are pickled and passed via the transport command
     to the newly started python process.
 
-    If an exception is raised during execution of the decorated callable, this
+    If an exception is raised during execution of the decorated function, this
     exception is pickled and reraised.
 
     If `async` is `False`, STDOUT, STDERR and the return value of the decorated
-    callable are returned upon calling the decorated callable. Otherwise only
+    function are returned upon calling the decorated function. Otherwise only
     the process ID is returned; if a transport is defined, it is the process ID
     of the transport, otherwise the process ID of the interpreter.
 
@@ -51,7 +80,7 @@ class DeliveryBoy(object):
     are written to STDOUT and STDERR of the main process. This applies only to
     synchronous execution!
 
-    :param func: Callable objecte that is called in the new process
+    :param func: Function object that is called in the new process
     :type func: callable
     :param transport: Transport command
     :type transport: str
@@ -64,8 +93,6 @@ class DeliveryBoy(object):
 
     TODO: Think about more parameters
     TODO: Define arguments
-    TODO: Raise exception, if one is returned
-    TODO: Implement async feature
     """
     def __init__(self, func, **params):
         self.func = func
@@ -83,10 +110,10 @@ class DeliveryBoy(object):
         response = self._run_delivery()
 
         if self.transport:
-            self._unpickle(response[0])
-            self._pipe_stdout_err()
-            self._reraise()
+            self.outbox = unpickle(response[0])
 
+        self._pipe_stdout_err()
+        self._reraise()
         return self.outbox.return_value
 
     def _pack_box(self, args, kwargs):
@@ -119,7 +146,7 @@ class DeliveryBoy(object):
         """
         if self.transport:
             cmd = [self.transport, ] + self.transport_params + [
-                self.executable, "-m", "deliveryboy", self._pickle()
+                self.executable, "-m", "deliveryboy", pickle(self.inbox)
             ]
 
             try:
@@ -136,8 +163,7 @@ class DeliveryBoy(object):
             else:
                 return child_process.pid
         else:
-            self.outbox = DeliveryBox()
-            self.outbox.return_value = execute(self.inbox)
+            self.outbox = execute(self.inbox)
 
     def _pipe_stdout_err(self):
         """Redirect STDOUT and STDERR from delivered callable"""
@@ -148,33 +174,6 @@ class DeliveryBoy(object):
                     getattr(self.outbox, stream),
                     file=getattr(sys, stream)
                 )
-
-    def _pickle(self):
-        """Return pickled and encoded :py:obj:`deliveryboy.core.DeliveryBox`
-
-        :returns: pickled/encoded delivery box
-        :type: bytes
-        """
-        try:
-            return base64.b64encode(dumps(self.inbox))
-        except Exception as error:
-            raise DeliveryPickleError(real_exception=error)
-
-    def _unpickle(self, data):
-        """Return unpickled :py:obj:`deliveryboy.core.DeliveryBox`
-
-        :param data: pickled/encoded delivery box
-        :type data: bytes
-        :return: :py:obj:`deliveryboy.core.DeliveryBox`
-        """
-        if data.endswith(b"\n"):
-            data = data[:-1]
-        try:
-            self.outbox = loads(base64.b64decode(data))
-        except Exception as error:
-            raise DeliveryPickleError(real_exception=error)
-        else:
-            return self.outbox
 
     def _reraise(self):
         """Re-raises an exception originating from the callable"""
@@ -200,7 +199,7 @@ class DeliveryBoyDecorator(object):
     def __init__(self, **params):
         self.params = params
 
-    def __call__(self, func):
+    def __call__(self, func, *args, **kwargs):
         return DeliveryBoy(func, **self.params)
 
 
@@ -240,12 +239,11 @@ def main():
     pickled :py:obj:`deliveryboy.core.DeliveryBox` objects.
     """
     try:
-        decoded = base64.b64decode(bytes(sys.argv[1], "utf8"))
-        inbox = loads(decoded)
+        inbox = unpickle(bytes(sys.argv[1], "utf8"))
     except Exception as error:
         box = DeliveryBox()
         box.exception = error
     else:
         box = execute(inbox)
 
-    print(base64.b64encode(dumps(box)).decode("utf8"))
+    print(pickle(box))

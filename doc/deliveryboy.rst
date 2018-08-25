@@ -12,13 +12,19 @@ deliveryboy.core module
     :undoc-members:
     :show-inheritance:
 
+deliveryboy.exceptions module
+-----------------------------
+
+.. automodule:: deliveryboy.exceptions
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 
 Module contents
 ---------------
 
 .. automodule:: deliveryboy
     :members:
-    :special-members:
-    :private-members:
     :undoc-members:
     :show-inheritance:
