@@ -27,3 +27,5 @@ sudo
     This is PID 12113 run by root with value: date
     >>> print(sudo_test("time"))
     This is PID 12115 run by root with value: time
+
+.. important:: Always use the decorator with parenthesis!

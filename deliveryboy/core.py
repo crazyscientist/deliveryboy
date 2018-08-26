@@ -51,6 +51,7 @@ class DeliveryBox(object):
     exception = None
 
     # INPUT VALUES
+    instance = None
     func = None
     args = None
     kwargs = None
@@ -115,6 +116,11 @@ class DeliveryBoy(object):
         self._pipe_stdout_err()
         self._reraise()
         return self.outbox.return_value
+
+    def __get__(self, obj, classobj=None):
+        if obj is not None:
+            self.inbox.instance = obj
+        return self
 
     def _pack_box(self, args, kwargs):
         """Pack callable, arguments and modules
@@ -218,7 +224,10 @@ def execute(inbox):
 
     box = DeliveryBox()
     try:
-        box.return_value = func(*inbox.args, **inbox.kwargs)
+        if inbox.instance is not None:
+            box.return_value = func(inbox.instance, *inbox.args, **inbox.kwargs)
+        else:
+            box.return_value = func(*inbox.args, **inbox.kwargs)
     except Exception as error:
         box.exception = error
     box.stdout = sys.stdout.getvalue()

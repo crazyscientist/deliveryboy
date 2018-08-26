@@ -45,6 +45,5 @@ if __name__ == '__main__':
         print("Yes, we got the expected exception")
 
     # Example: Using the decorator on a class method
-    # TODO: Manually passing the instance as argument is not intuitive!
     sinst = SudoDemo(3)
-    print(sinst(sinst, 2))
+    print(sinst(2))

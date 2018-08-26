@@ -1,6 +1,14 @@
 deliveryboy package
 ===================
 
+Module contents
+---------------
+
+.. automodule:: deliveryboy
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -21,10 +29,3 @@ deliveryboy.exceptions module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: deliveryboy
-    :members:
-    :undoc-members:
-    :show-inheritance:
