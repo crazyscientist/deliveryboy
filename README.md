@@ -16,7 +16,7 @@ version of Python and a similar (virtual-) environment including the
 dependencies of this package are present. Everything else will get pickled and
 provided in the new Python process.
 
-See also the [documentation](https://readthedocs.org/projects/deliveryboy/).
+See also the [documentation](https://deliveryboy.readthedocs.io/en/latest/index.html).
 
 ## State of the project
 
