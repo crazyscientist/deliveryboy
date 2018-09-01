@@ -3,6 +3,7 @@
 
 import base64
 from io import StringIO
+import re
 import subprocess
 import sys
 import types
@@ -13,31 +14,52 @@ from .exceptions import (DeliveryTransportError, DeliveryPickleError,
                          DeliveryPackingError)
 
 
+PICKLE_START_MARKER = b"=====BEGINPICKLE====="
+PICKLE_END_MARKER = b"=====ENDPICKLE====="
+
+
 def pickle(data):
     """Return pickled and encoded :py:obj:`deliveryboy.core.DeliveryBox`
 
     :param data: delivery box to be pickled
     :type data: :py:obj:`deliveryboy.core.DeliveryBox`
     :returns: pickled/encoded delivery box
-    :type: bytes
+    :rtype: bytes
+    :raises :py:exc:`DeliveryPickleError`: if data cannot be pickled
     """
     try:
-        return base64.b64encode(dumps(data)).decode("utf8")
+        return PICKLE_START_MARKER.decode("utf8") + \
+               base64.b64encode(dumps(data)).decode("utf8") + \
+               PICKLE_END_MARKER.decode("utf8")
     except Exception as error:
         raise DeliveryPickleError(real_exception = error)
 
 
-def unpickle(data):
+def unpickle(data, discard_excess=True):
     """Return unpickled :py:obj:`deliveryboy.core.DeliveryBox`
 
     :param data: pickled/encoded delivery box
     :type data: bytes
-    :return: :py:obj:`deliveryboy.core.DeliveryBox`
+    :param discard_excess: If ``True``, additional text around the pickled data
+                           will be discarded. Default: ``True``
+    :type discard_excess: bool
+    :return: :py:obj:`deliveryboy.core.DeliveryBox`, prefix, suffix
+    :raises :py:exc:`DeliveryPickleError`: if data cannot be unpickled
     """
-    if data.endswith(b"\n"):
-        data = data[:-1]
+    match = re.search(
+        "(?P<prefix>.*?){}(?P<data>.*?){}(?P<suffix>.*?)".format(
+            PICKLE_START_MARKER.decode("utf8"),
+            PICKLE_END_MARKER.decode("utf8")
+        ).encode("utf8"),
+        data
+    )
+
+    if match is None:
+        raise DeliveryPickleError("Cannot unpickle data: {}".format(data))
+
     try:
-        return loads(base64.b64decode(data))
+        return loads(base64.b64decode(match.group("data"))), \
+               match.group("prefix"), match.group("suffix")
     except Exception as error:
         raise DeliveryPickleError(real_exception = error)
 
@@ -94,6 +116,7 @@ class DeliveryBoy(object):
 
     TODO: Think about more parameters
     TODO: Define arguments
+    TODO: Handle output of transport command
     """
     def __init__(self, func, **params):
         self.func = func
@@ -109,9 +132,9 @@ class DeliveryBoy(object):
         self._pack_box(args, kwargs)
 
         response = self._run_delivery()
-
+        prefix, suffix = "", ""
         if self.transport:
-            self.outbox = unpickle(response[0])
+            self.outbox, prefix, suffix = unpickle(response[0])
 
         self._pipe_stdout_err()
         self._reraise()
@@ -165,11 +188,20 @@ class DeliveryBoy(object):
                 raise DeliveryTransportError(real_exception=error)
 
             if not self.async:
-                return child_process.communicate()
+                response = child_process.communicate()
+                self._handle_call_error(response, child_process.returncode)
+                return response
             else:
                 return child_process.pid
         else:
             self.outbox = execute(self.inbox)
+
+    def _handle_call_error(self, response, returncode):
+        if returncode:
+            raise DeliveryTransportError(
+                "Child process exited with {}: {}".format(
+                    returncode, response[1].decode("utf8")
+            ))
 
     def _pipe_stdout_err(self):
         """Redirect STDOUT and STDERR from delivered callable"""
@@ -248,7 +280,7 @@ def main():
     pickled :py:obj:`deliveryboy.core.DeliveryBox` objects.
     """
     try:
-        inbox = unpickle(bytes(sys.argv[1], "utf8"))
+        inbox = unpickle(bytes(sys.argv[1], "utf8"))[0]
     except Exception as error:
         box = DeliveryBox()
         box.exception = error
