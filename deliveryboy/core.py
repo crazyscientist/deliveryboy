@@ -25,7 +25,7 @@ def pickle(data):
     :type data: :py:obj:`deliveryboy.core.DeliveryBox`
     :returns: pickled/encoded delivery box
     :rtype: bytes
-    :raises :py:exc:`DeliveryPickleError`: if data cannot be pickled
+    :raises DeliveryPickleError: if data cannot be pickled
     """
     try:
         return PICKLE_START_MARKER.decode("utf8") + \
@@ -44,7 +44,7 @@ def unpickle(data, discard_excess=True):
                            will be discarded. Default: ``True``
     :type discard_excess: bool
     :return: :py:obj:`deliveryboy.core.DeliveryBox`, prefix, suffix
-    :raises :py:exc:`DeliveryPickleError`: if data cannot be unpickled
+    :raises DeliveryPickleError: if data cannot be unpickled
     """
     match = re.search(
         "(?P<prefix>.*?){}(?P<data>.*?){}(?P<suffix>.*?)".format(
@@ -114,9 +114,11 @@ class DeliveryBoy(object):
                   called via the transport command to finish. Default: `False`
     :type async: bool
 
-    TODO: Think about more parameters
-    TODO: Define arguments
-    TODO: Handle output of transport command
+    .. todo:: Think about more parameters
+
+    .. todo:: Define arguments
+
+    .. todo:: Handle output of transport command
     """
     def __init__(self, func, **params):
         self.func = func
