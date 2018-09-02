@@ -3,6 +3,7 @@
 
 import base64
 from io import StringIO
+import os
 import re
 import subprocess
 import sys
@@ -77,7 +78,8 @@ class DeliveryBox(object):
     func = None
     args = None
     kwargs = None
-    modules = []
+    modules = set()
+    pickled_modules = set()
 
     def __str__(self):
         return "\n".join(["{:15s}: {}".format(key, value)
@@ -159,14 +161,72 @@ class DeliveryBoy(object):
         self.inbox.kwargs = kwargs
         if isinstance(self.func, types.FunctionType):
             self.inbox.func = self.func.__code__
-            myglobals = self.func.__globals__
+            self._pack_box_modules()
+            # myglobals = self.func.__globals__
         else:
             raise DeliveryPackingError(
                 "This type of callable is not supported"
             )
-        self.inbox.modules = [k for (k, v) in myglobals.items()
-                              if isinstance(v, types.ModuleType)
-                              and not k.startswith("__")]
+
+    def _pack_box_modules(self):
+        """Add modules to box for pickling"""
+        allmodules = [(k, v) for (k, v) in self.func.__globals__.items()
+                      if isinstance(v, types.ModuleType)
+                      and not k.startswith("__")]
+
+        venv = os.environ.get("VIRTUAL_ENV", None)
+        path = sys.path
+        if venv:
+            path = [p for p in path if p and not p.startswith(venv)]
+
+        print("===DEBUG=== VENV", venv)
+        for p in path:
+            print("===DEBUG=== PATH", p)
+
+        try:
+            # Handle builtins
+            # Start with those that have no __file__ attribute
+            self.inbox.modules |= set([k for (k, v) in allmodules
+                                       if getattr(v, '__file__', None) is None])
+
+            # Then add those from the system paths
+            for sitepath in path:
+                self.inbox.modules |= {
+                        k for (k, v) in allmodules
+                        if getattr(v, '__file__', '').startswith(sitepath)
+                }
+        except Exception as error:
+            raise DeliveryPackingError(
+                "Cannot pack built-in modules",
+                real_exception=error
+            )
+
+        try:
+            # Handle modules from virtual env
+            if venv:
+                # Add module names to module list
+                self.inbox.modules |= set([
+                    k for (k, v) in allmodules
+                    if getattr(v, '__file__', '').startswith(venv)
+                ])
+        except Exception as error:
+            raise DeliveryPackingError(
+                "Cannot pack modules from virtual env",
+                real_exception=error
+            )
+
+        try:
+            # Handle all other modules
+            self.inbox.pickled_modules |= set([v for (k, v) in allmodules
+                                               if k not in self.inbox.modules])
+        except Exception as error:
+            raise DeliveryPackingError(
+                "Cannot pack remaining modules",
+                real_exception=error
+            )
+
+        print("===DEBUG=== MODULES", self.inbox.modules)
+        print("===DEBUG=== PICKLE MODULES", self.inbox.pickled_modules)
 
     def _run_delivery(self):
         """Executes the actual transport/executable
