@@ -6,8 +6,6 @@
 DeliveryBoy: Deliver callable to new process
 ============================================
 
-.. include:: intro.rst
-
 .. toctree::
    :maxdepth: 4
    :caption: Contents:
@@ -17,6 +15,7 @@ DeliveryBoy: Deliver callable to new process
    quick
    deliveryboy
 
+.. include:: intro.rst
 
 Indices and tables
 ==================

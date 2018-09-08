@@ -48,8 +48,8 @@ def unpickle(data, discard_excess=True):
     :rtype: :py:obj:`deliveryboy.core.DeliveryBox`, str, str
     :raises DeliveryPickleError: if data cannot be unpickled
     """
-    match = re.search(
-        "(?P<prefix>.*?){}(?P<data>.*?){}(?P<suffix>.*?)".format(
+    match = re.match(
+        "(?P<prefix>.*?){}(?P<data>.*?){}(?P<suffix>.*)".format(
             PICKLE_START_MARKER.decode("utf8"),
             PICKLE_END_MARKER.decode("utf8")
         ).encode("utf8"),
@@ -66,7 +66,6 @@ def unpickle(data, discard_excess=True):
 
     if discard_excess:
         return return_data, "", ""
-
     return return_data, match.group("prefix"), match.group("suffix")
 
 
@@ -89,6 +88,9 @@ class DeliveryBox(object):
     def __str__(self):
         return "\n".join(["{:15s}: {}".format(key, value)
                           for (key, value) in self.__dict__.items()])
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
 
 
 class DeliveryBoy(object):
@@ -114,26 +116,39 @@ class DeliveryBoy(object):
     :type func: callable
     :param transport: Transport command
     :type transport: str
+    :param transport_params: Additional arguments for the transport command.
+    :type transport_params: list
     :param executable: The python executable to be called.
                        Default: `sys.executable`.
     :type executable: Absolute path of python interpreter
     :param async: If set to `True`, this process will not wait for the process
                   called via the transport command to finish. Default: `False`
     :type async: bool
+    :param discard_excess: If set to `False`, all output written to STDOUT by
+                           the new process that is not redirected gets pre- or
+                           appended accordingly to the delivery box.
+                           Default: `True`
+    :type discard_excess: bool
 
-    .. todo:: Think about more parameters
+    :return: Return value of the decorated callable
 
-    .. todo:: Define arguments
-
-    .. todo:: Handle output of transport command
+    :raises deliveryboy.exceptions.DeliveryPackingError: if decorated callable
+        is not supported, if a module cannot be added to the delivery box
+    :raises deliveryboy.exceptions.DeliveryTransportError: if calling the
+        transport or executable fail (e.g. command not found, exit code not
+        equal zero.
     """
-    def __init__(self, func, **params):
+
+    def __init__(self, func, transport=None, transport_params=[],
+                 executable=sys.executable, async=False, discard_excess=True,
+                 **params):
         self.func = func
         self.params = params
-        self.async = self.params.pop("async", False)
-        self.executable = self.params.pop("executable", sys.executable)
-        self.transport = self.params.pop("transport", None)
-        self.transport_params = self.params.pop("transport_params", [])
+        self.async = async
+        self.discard_excess= discard_excess
+        self.executable = executable
+        self.transport = transport
+        self.transport_params = transport_params
         self.inbox = DeliveryBox()
         self.outbox = None
 
@@ -143,7 +158,8 @@ class DeliveryBoy(object):
         response = self._run_delivery()
 
         if self.transport:
-            self.outbox, prefix, suffix = unpickle(response[0])
+            self.outbox, prefix, suffix = unpickle(response[0],
+                                                   self.discard_excess)
             if prefix or suffix:
                 self.outbox.stdout = prefix + self.outbox.stdout + suffix
 
@@ -206,6 +222,7 @@ class DeliveryBoy(object):
             )
 
         try:
+            # TODO: Correctly pickle these modules!
             # Handle all other modules
             self.inbox.pickled_modules |= set([(k, v) for (k, v) in allmodules
                                                if k not in self.inbox.modules])

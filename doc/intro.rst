@@ -5,20 +5,28 @@ What is DeliveryBoy
 -------------------
 
 DeliveryBoy is a lightweight and transparent intermediary for executing a Python
-callable in a new Python process such that a developer using this intermediary
-does not have to care.
+callable -- a function or method -- in a new Python process such that a
+developer using this intermediary does not have to care about how the object and
+modules are passed.
 
-The new Python process is started by a transport command yield a wide range of
-applications, e.g.:
+The new Python process is started by a transport command yielding a wide range
+of applications, e.g.:
 
-- Execution as a different user by `sudo`.
-- Execution on a remote host by `ssh`.
-- Execution on a HPC cluster by `bsub` (in case of LSF).
+- Execution as a different user via ``sudo``.
+- Execution on a remote host via ``ssh``.
+- Execution on a HPC cluster via ``bsub`` (in case of LSF).
 
-The base assumption for the intermediary is that on the target host a compatible
-version of Python and a similar (virtual-) environment including the
-dependencies of this package are present. Everything else will get pickled and
-provided in the new Python process.
+The base assumptions for this implementation are:
+
+- On the target host a compatible version of Python is installed.
+- On the target host the Python environment contains the ``deliveryboy``
+  package.
+- The Python environment on the source and target hosts are identical (aka. same
+  modules installed).
+- Only the callable, module names for modules in the (virtual) environment and
+  modules from outside the environment need to be transported.
+
+.. uml:: process.puml
 
 Acknowledgement
 ---------------
