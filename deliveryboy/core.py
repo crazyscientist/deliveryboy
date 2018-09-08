@@ -45,6 +45,7 @@ def unpickle(data, discard_excess=True):
                            will be discarded. Default: ``True``
     :type discard_excess: bool
     :return: :py:obj:`deliveryboy.core.DeliveryBox`, prefix, suffix
+    :rtype: :py:obj:`deliveryboy.core.DeliveryBox`, str, str
     :raises DeliveryPickleError: if data cannot be unpickled
     """
     match = re.search(
@@ -59,10 +60,14 @@ def unpickle(data, discard_excess=True):
         raise DeliveryPickleError("Cannot unpickle data: {}".format(data))
 
     try:
-        return loads(base64.b64decode(match.group("data"))), \
-               match.group("prefix"), match.group("suffix")
+        return_data = loads(base64.b64decode(match.group("data")))
     except Exception as error:
         raise DeliveryPickleError(real_exception = error)
+
+    if discard_excess:
+        return return_data, "", ""
+
+    return return_data, match.group("prefix"), match.group("suffix")
 
 
 class DeliveryBox(object):
@@ -136,9 +141,11 @@ class DeliveryBoy(object):
         self._pack_box(args, kwargs)
 
         response = self._run_delivery()
-        prefix, suffix = "", ""
+
         if self.transport:
             self.outbox, prefix, suffix = unpickle(response[0])
+            if prefix or suffix:
+                self.outbox.stdout = prefix + self.outbox.stdout + suffix
 
         self._pipe_stdout_err()
         self._reraise()
@@ -175,16 +182,13 @@ class DeliveryBoy(object):
                       and not k.startswith("__")]
 
         venv = os.environ.get("VIRTUAL_ENV", None)
-        path = sys.path
+        path = sys.path[1:]
         if venv:
             path = [p for p in path if p and not p.startswith(venv)]
-
-        print("===DEBUG=== VENV", venv)
-        for p in path:
-            print("===DEBUG=== PATH", p)
+            path.append(venv)
 
         try:
-            # Handle builtins
+            # Handle builtins and modules from virtual env
             # Start with those that have no __file__ attribute
             self.inbox.modules |= set([k for (k, v) in allmodules
                                        if getattr(v, '__file__', None) is None])
@@ -197,36 +201,19 @@ class DeliveryBoy(object):
                 }
         except Exception as error:
             raise DeliveryPackingError(
-                "Cannot pack built-in modules",
-                real_exception=error
-            )
-
-        try:
-            # Handle modules from virtual env
-            if venv:
-                # Add module names to module list
-                self.inbox.modules |= set([
-                    k for (k, v) in allmodules
-                    if getattr(v, '__file__', '').startswith(venv)
-                ])
-        except Exception as error:
-            raise DeliveryPackingError(
-                "Cannot pack modules from virtual env",
+                "Cannot pack built-in/venv modules",
                 real_exception=error
             )
 
         try:
             # Handle all other modules
-            self.inbox.pickled_modules |= set([v for (k, v) in allmodules
+            self.inbox.pickled_modules |= set([(k, v) for (k, v) in allmodules
                                                if k not in self.inbox.modules])
         except Exception as error:
             raise DeliveryPackingError(
                 "Cannot pack remaining modules",
                 real_exception=error
             )
-
-        print("===DEBUG=== MODULES", self.inbox.modules)
-        print("===DEBUG=== PICKLE MODULES", self.inbox.pickled_modules)
 
     def _run_delivery(self):
         """Executes the actual transport/executable
@@ -304,8 +291,14 @@ class DeliveryBoyDecorator(object):
 
 
 def execute(inbox):
-    globals().update({x: __import__(x) for x in inbox.modules})
+    """Setup the environment and execute the decorated callable
 
+    :param inbox: Pickled :py:obj:`DeliveryBox` instance
+    :return: :py:obj:`DeliveryBox`
+    :raises deliveryboy.exception.DeliveryPackingError: If callable is missing
+    """
+    globals().update({x: __import__(x) for x in inbox.modules})
+    globals().update({name: mod for (name, mod) in inbox.pickled_modules})
     orig_stdout = sys.stdout
     orig_stderr = sys.stderr
     sys.stdout = StringIO()
