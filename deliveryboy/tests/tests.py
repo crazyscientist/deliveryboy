@@ -6,7 +6,7 @@ import tempfile
 import dill
 
 from .base import UtilsMixin
-from .. import core, exceptions
+from .. import core, exceptions, pickle
 
 
 def test_func(value):
@@ -69,11 +69,11 @@ class PickleTest(UtilsMixin, unittest.TestCase):
 
     def test_pickle_markers(self):
         data = self.get_random_bytes()
-        pickled = core.pickle(data).encode("utf8")
+        pickled = pickle.pickle(data).encode("utf8")
 
         with self.subTest("while pickling"):
-            self.assertTrue(pickled.startswith(core.PICKLE_START_MARKER))
-            self.assertTrue(pickled.endswith(core.PICKLE_END_MARKER))
+            self.assertTrue(pickled.startswith(pickle.PICKLE_START_MARKER))
+            self.assertTrue(pickled.endswith(pickle.PICKLE_END_MARKER))
 
         with self.subTest("while unpickling"):
             unpickled, prefix, suffix = core.unpickle(pickled)
@@ -91,13 +91,13 @@ class PickleTest(UtilsMixin, unittest.TestCase):
     def test_unpickle_error(self):
         testdata = [
             b'simple plain invalid text',
-            core.PICKLE_START_MARKER + b'missing end marker',
-            b'missing start marker' + core.PICKLE_END_MARKER,
-            core.PICKLE_START_MARKER + b'invalid' + core.PICKLE_END_MARKER
+            pickle.PICKLE_START_MARKER + b'missing end marker',
+            b'missing start marker' + pickle.PICKLE_END_MARKER,
+            pickle.PICKLE_START_MARKER + b'invalid' + pickle.PICKLE_END_MARKER
         ]
 
         for data in testdata:
             with self.subTest("Invalid data: {}".format(data)):
                 self.assertRaises(
-                    exceptions.DeliveryPickleError, core.unpickle, data
+                    exceptions.DeliveryPickleError, pickle.unpickle, data
                 )

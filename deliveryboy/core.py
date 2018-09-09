@@ -1,72 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf8 -*-
 
-import base64
+
 from io import StringIO
 import os
-import re
+
 import subprocess
 import sys
 import types
 
-from dill import dumps, loads
-
-from .exceptions import (DeliveryTransportError, DeliveryPickleError,
-                         DeliveryPackingError)
-
-
-PICKLE_START_MARKER = b"=====BEGINPICKLE====="
-PICKLE_END_MARKER = b"=====ENDPICKLE====="
-
-
-def pickle(data):
-    """Return pickled and encoded :py:obj:`deliveryboy.core.DeliveryBox`
-
-    :param data: delivery box to be pickled
-    :type data: :py:obj:`deliveryboy.core.DeliveryBox`
-    :returns: pickled/encoded delivery box
-    :rtype: bytes
-    :raises DeliveryPickleError: if data cannot be pickled
-    """
-    try:
-        return PICKLE_START_MARKER.decode("utf8") + \
-               base64.b64encode(dumps(data)).decode("utf8") + \
-               PICKLE_END_MARKER.decode("utf8")
-    except Exception as error:
-        raise DeliveryPickleError(real_exception = error)
-
-
-def unpickle(data, discard_excess=True):
-    """Return unpickled :py:obj:`deliveryboy.core.DeliveryBox`
-
-    :param data: pickled/encoded delivery box
-    :type data: bytes
-    :param discard_excess: If ``True``, additional text around the pickled data
-                           will be discarded. Default: ``True``
-    :type discard_excess: bool
-    :return: :py:obj:`deliveryboy.core.DeliveryBox`, prefix, suffix
-    :rtype: :py:obj:`deliveryboy.core.DeliveryBox`, str, str
-    :raises DeliveryPickleError: if data cannot be unpickled
-    """
-    match = re.match(
-        "(?P<prefix>.*?){}(?P<data>.*?){}(?P<suffix>.*)".format(
-            PICKLE_START_MARKER.decode("utf8"),
-            PICKLE_END_MARKER.decode("utf8")
-        ).encode("utf8"),
-        data
-    )
-
-    if match is None:
-        raise DeliveryPickleError("Cannot unpickle data: {}".format(data))
-
-    try:
-        return_data = loads(base64.b64decode(match.group("data")))
-    except Exception as error:
-        raise DeliveryPickleError(real_exception = error)
-
-    if discard_excess:
-        return return_data, "", ""
-    return return_data, match.group("prefix"), match.group("suffix")
+from .exceptions import (DeliveryTransportError, DeliveryPackingError)
+from .pickle import pickle, unpickle, ModulePickle
 
 
 class DeliveryBox(object):
@@ -221,16 +165,12 @@ class DeliveryBoy(object):
                 real_exception=error
             )
 
-        try:
-            # TODO: Correctly pickle these modules!
-            # Handle all other modules
-            self.inbox.pickled_modules |= set([(k, v) for (k, v) in allmodules
-                                               if k not in self.inbox.modules])
-        except Exception as error:
-            raise DeliveryPackingError(
-                "Cannot pack remaining modules",
-                real_exception=error
-            )
+        # TODO: This breaks availability of imported submodules
+        mod_pickle = ModulePickle(modules=[v for (k, v) in allmodules
+                                           if k not in self.inbox.modules])
+        self.inbox.pickled_modules = mod_pickle.pickle()
+        self.inbox.modules |= set([k for (k, v) in allmodules
+                                   if k not in self.inbox.modules])
 
     def _run_delivery(self):
         """Executes the actual transport/executable
@@ -314,8 +254,13 @@ def execute(inbox):
     :return: :py:obj:`DeliveryBox`
     :raises deliveryboy.exception.DeliveryPackingError: If callable is missing
     """
+    # Load pickled modules
+    mod_pickle = ModulePickle(pickled=inbox.pickled_modules)
+    mod_pickle.unpickle()
+
+    # Import modules
     globals().update({x: __import__(x) for x in inbox.modules})
-    globals().update({name: mod for (name, mod) in inbox.pickled_modules})
+
     orig_stdout = sys.stdout
     orig_stderr = sys.stderr
     sys.stdout = StringIO()
@@ -324,6 +269,7 @@ def execute(inbox):
     if inbox.func is not None and isinstance(inbox.func, types.CodeType):
         func = types.FunctionType(inbox.func, globals())
     else:
+        del mod_pickle
         raise DeliveryPackingError("No callable to run in delivery box")
 
     box = DeliveryBox()
@@ -339,6 +285,7 @@ def execute(inbox):
 
     sys.stdout = orig_stdout
     sys.stderr = orig_stderr
+    del mod_pickle
     return box
 
 

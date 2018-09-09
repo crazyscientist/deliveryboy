@@ -29,3 +29,11 @@ deliveryboy.exceptions module
     :show-inheritance:
 
 
+deliveryboy.pickle module
+-----------------------------
+
+.. automodule:: deliveryboy.pickle
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
