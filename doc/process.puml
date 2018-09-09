@@ -1,0 +1,51 @@
+@startuml
+hide footbox
+title __Example:__ Sequence for usage with ``ssh``
+
+box "'Local Host'" #LightBlue
+    control "Your script" as script
+    boundary "DeliveryBoy" as db1
+end box
+
+box "'Remote Host'" #LightGray
+    boundary "DeliveryBoy" as db2
+end box
+
+-> script: call
+activate script
+script -> script: call decorator
+activate script
+
+script -> db1
+activate db1
+db1 -> db1: pickle
+activate db1
+deactivate db1
+db1 -> db2: call through transport
+activate db2
+db2 -> db2: unpickle
+activate db2
+deactivate db2
+db2 -> db2: load modules
+activate db2
+deactivate db2
+db2 -> db2: call decorated
+activate db2
+deactivate db2
+db2 -> db2: pickle
+activate db2
+deactivate db2
+
+db2 -> db1: return
+deactivate db2
+
+db1 -> db1: unpickle
+activate db1
+deactivate db1
+db1 -> script: return
+deactivate db1
+
+deactivate script
+<- script: exit
+deactivate script
+@enduml

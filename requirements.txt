@@ -1,2 +1,3 @@
 dill
 sphinx-theme
+sphinxcontrib-plantuml

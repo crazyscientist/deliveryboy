@@ -11,10 +11,13 @@ applications, e.g.:
 - Execution on a remote host by `ssh`.
 - Execution on a HPC cluster by `bsub` (in case of LSF).
 
-The base assumption for the intermediary is that on the target host a compatible
-version of Python and a similar (virtual-) environment including the 
-dependencies of this package are present. Everything else will get pickled and
-provided in the new Python process.
+The base assumptions for this implementation are:
+
+- On the target host a compatible version of Python is installed.
+- On the target host the Python environment contains the deliveryboy package.
+- The Python environment on the source and target hosts are identical (aka. same modules installed).
+- Only the callable, module names for modules in the (virtual) environment and modules from outside the environment need to be transported.
+
 
 See also the [documentation](https://deliveryboy.readthedocs.io/en/latest/index.html).
 

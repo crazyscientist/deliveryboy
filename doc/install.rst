@@ -1,3 +1,5 @@
+.. _installation:
+
 Installation
 ============
 
@@ -14,9 +16,16 @@ via GitHub ...
 ^^^^^^^^^^^^^^
 clone it, run it
 
+.. code-block:: python
+
+    git clone https://github.com/crazyscientist/deliveryboy.git
+
 ... or pip
 ^^^^^^^^^^
-not yet deployed
+
+.. code-block:: bash
+
+    pip install deliveryboy
 
 Configuration
 -------------

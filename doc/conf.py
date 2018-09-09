@@ -25,9 +25,9 @@ author = 'Andreas Hasenkopf'
 copyright = '2018, {}'.format(author)
 
 # The short X.Y version
-version = '0.0'
+version = '0.1'
 # The full version, including alpha/beta/rc tags
-release = '0.0.0'
+release = '0.1.0'
 
 
 # -- General configuration ---------------------------------------------------
@@ -45,6 +45,7 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.autodoc',
     'sphinx.ext.todo',
+    'sphinxcontrib.plantuml'
 ]
 
 # Add any paths that contain templates here, relative to this directory.

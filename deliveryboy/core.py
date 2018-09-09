@@ -1,67 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf8 -*-
 
-import base64
+
 from io import StringIO
-import re
+import os
+
 import subprocess
 import sys
 import types
 
-from dill import dumps, loads
-
-from .exceptions import (DeliveryTransportError, DeliveryPickleError,
-                         DeliveryPackingError)
-
-
-PICKLE_START_MARKER = b"=====BEGINPICKLE====="
-PICKLE_END_MARKER = b"=====ENDPICKLE====="
-
-
-def pickle(data):
-    """Return pickled and encoded :py:obj:`deliveryboy.core.DeliveryBox`
-
-    :param data: delivery box to be pickled
-    :type data: :py:obj:`deliveryboy.core.DeliveryBox`
-    :returns: pickled/encoded delivery box
-    :rtype: bytes
-    :raises DeliveryPickleError: if data cannot be pickled
-    """
-    try:
-        return PICKLE_START_MARKER.decode("utf8") + \
-               base64.b64encode(dumps(data)).decode("utf8") + \
-               PICKLE_END_MARKER.decode("utf8")
-    except Exception as error:
-        raise DeliveryPickleError(real_exception = error)
-
-
-def unpickle(data, discard_excess=True):
-    """Return unpickled :py:obj:`deliveryboy.core.DeliveryBox`
-
-    :param data: pickled/encoded delivery box
-    :type data: bytes
-    :param discard_excess: If ``True``, additional text around the pickled data
-                           will be discarded. Default: ``True``
-    :type discard_excess: bool
-    :return: :py:obj:`deliveryboy.core.DeliveryBox`, prefix, suffix
-    :raises DeliveryPickleError: if data cannot be unpickled
-    """
-    match = re.search(
-        "(?P<prefix>.*?){}(?P<data>.*?){}(?P<suffix>.*?)".format(
-            PICKLE_START_MARKER.decode("utf8"),
-            PICKLE_END_MARKER.decode("utf8")
-        ).encode("utf8"),
-        data
-    )
-
-    if match is None:
-        raise DeliveryPickleError("Cannot unpickle data: {}".format(data))
-
-    try:
-        return loads(base64.b64decode(match.group("data"))), \
-               match.group("prefix"), match.group("suffix")
-    except Exception as error:
-        raise DeliveryPickleError(real_exception = error)
+from .exceptions import (DeliveryTransportError, DeliveryPackingError)
+from .pickle import pickle, unpickle, ModulePickle
 
 
 class DeliveryBox(object):
@@ -77,11 +26,15 @@ class DeliveryBox(object):
     func = None
     args = None
     kwargs = None
-    modules = []
+    modules = set()
+    pickled_modules = set()
 
     def __str__(self):
         return "\n".join(["{:15s}: {}".format(key, value)
                           for (key, value) in self.__dict__.items()])
+
+    def __eq__(self, other):
+        return self.__dict__ == other.__dict__
 
 
 class DeliveryBoy(object):
@@ -107,26 +60,39 @@ class DeliveryBoy(object):
     :type func: callable
     :param transport: Transport command
     :type transport: str
+    :param transport_params: Additional arguments for the transport command.
+    :type transport_params: list
     :param executable: The python executable to be called.
                        Default: `sys.executable`.
     :type executable: Absolute path of python interpreter
     :param async: If set to `True`, this process will not wait for the process
                   called via the transport command to finish. Default: `False`
     :type async: bool
+    :param discard_excess: If set to `False`, all output written to STDOUT by
+                           the new process that is not redirected gets pre- or
+                           appended accordingly to the delivery box.
+                           Default: `True`
+    :type discard_excess: bool
 
-    .. todo:: Think about more parameters
+    :return: Return value of the decorated callable
 
-    .. todo:: Define arguments
-
-    .. todo:: Handle output of transport command
+    :raises deliveryboy.exceptions.DeliveryPackingError: if decorated callable
+        is not supported, if a module cannot be added to the delivery box
+    :raises deliveryboy.exceptions.DeliveryTransportError: if calling the
+        transport or executable fail (e.g. command not found, exit code not
+        equal zero.
     """
-    def __init__(self, func, **params):
+
+    def __init__(self, func, transport=None, transport_params=[],
+                 executable=sys.executable, async=False, discard_excess=True,
+                 **params):
         self.func = func
         self.params = params
-        self.async = self.params.pop("async", False)
-        self.executable = self.params.pop("executable", sys.executable)
-        self.transport = self.params.pop("transport", None)
-        self.transport_params = self.params.pop("transport_params", [])
+        self.async = async
+        self.discard_excess= discard_excess
+        self.executable = executable
+        self.transport = transport
+        self.transport_params = transport_params
         self.inbox = DeliveryBox()
         self.outbox = None
 
@@ -134,9 +100,12 @@ class DeliveryBoy(object):
         self._pack_box(args, kwargs)
 
         response = self._run_delivery()
-        prefix, suffix = "", ""
+
         if self.transport:
-            self.outbox, prefix, suffix = unpickle(response[0])
+            self.outbox, prefix, suffix = unpickle(response[0],
+                                                   self.discard_excess)
+            if prefix or suffix:
+                self.outbox.stdout = prefix + self.outbox.stdout + suffix
 
         self._pipe_stdout_err()
         self._reraise()
@@ -159,14 +128,49 @@ class DeliveryBoy(object):
         self.inbox.kwargs = kwargs
         if isinstance(self.func, types.FunctionType):
             self.inbox.func = self.func.__code__
-            myglobals = self.func.__globals__
+            self._pack_box_modules()
+            # myglobals = self.func.__globals__
         else:
             raise DeliveryPackingError(
                 "This type of callable is not supported"
             )
-        self.inbox.modules = [k for (k, v) in myglobals.items()
-                              if isinstance(v, types.ModuleType)
-                              and not k.startswith("__")]
+
+    def _pack_box_modules(self):
+        """Add modules to box for pickling"""
+        allmodules = [(k, v) for (k, v) in self.func.__globals__.items()
+                      if isinstance(v, types.ModuleType)
+                      and not k.startswith("__")]
+
+        venv = os.environ.get("VIRTUAL_ENV", None)
+        path = sys.path[1:]
+        if venv:
+            path = [p for p in path if p and not p.startswith(venv)]
+            path.append(venv)
+
+        try:
+            # Handle builtins and modules from virtual env
+            # Start with those that have no __file__ attribute
+            self.inbox.modules |= set([k for (k, v) in allmodules
+                                       if getattr(v, '__file__', None) is None])
+
+            # Then add those from the system paths
+            for sitepath in path:
+                self.inbox.modules |= {
+                        k for (k, v) in allmodules
+                        if getattr(v, '__file__', '').startswith(sitepath)
+                }
+        except Exception as error:
+            raise DeliveryPackingError(
+                "Cannot pack built-in/venv modules",
+                real_exception=error
+            )
+
+        # TODO: This breaks availability of imported submodules
+        mod_pickle = ModulePickle(modules=[v for (k, v) in allmodules
+                                           if k not in self.inbox.modules])
+        self.inbox.pickled_modules = mod_pickle.pickle()
+        self.inbox.modules |= set([k for (k, v) in allmodules
+                                   if k not in self.inbox.modules])
 
     def _run_delivery(self):
         """Executes the actual transport/executable
@@ -244,6 +248,17 @@ class DeliveryBoyDecorator(object):
 
 
 def execute(inbox):
+    """Setup the environment and execute the decorated callable
+
+    :param inbox: Pickled :py:obj:`DeliveryBox` instance
+    :return: :py:obj:`DeliveryBox`
+    :raises deliveryboy.exception.DeliveryPackingError: If callable is missing
+    """
+    # Load pickled modules
+    mod_pickle = ModulePickle(pickled=inbox.pickled_modules)
+    mod_pickle.unpickle()
+
+    # Import modules
     globals().update({x: __import__(x) for x in inbox.modules})
 
     orig_stdout = sys.stdout
@@ -254,6 +269,7 @@ def execute(inbox):
     if inbox.func is not None and isinstance(inbox.func, types.CodeType):
         func = types.FunctionType(inbox.func, globals())
     else:
+        del mod_pickle
         raise DeliveryPackingError("No callable to run in delivery box")
 
     box = DeliveryBox()
@@ -269,6 +285,7 @@ def execute(inbox):
 
     sys.stdout = orig_stdout
     sys.stderr = orig_stderr
+    del mod_pickle
     return box
 
 

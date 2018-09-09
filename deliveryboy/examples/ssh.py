@@ -4,7 +4,7 @@ import socket
 from deliveryboy.core import DeliveryBoyDecorator
 
 
-@DeliveryBoyDecorator(transport="ssh", transport_params=['-v', 'localhost'])
+@DeliveryBoyDecorator(transport="ssh", transport_params=['-v', 'testserver'], executable="/opt/deliveryboy/bin/python", discard_excess=True)
 def ssh_test(value):
     print("=== HELLO WORLD ===")
     return "This is PID {} run by {} on {} with value: {}".format(
